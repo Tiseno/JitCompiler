@@ -281,7 +281,98 @@ fibonacciProgram =
   , Exit
   ]
 
-programs = [fibonacciProgram]
+fib n = fib' n 0 1 0
+  where
+    fib' n i f1 _
+      | n == i = f1
+    fib' n i f1 f0 = fib' n (i + 1) (f1 + f0) f1
+
+fibonacciProgram2 offset =
+  [ Dup2 -- #begin 0
+  , Equals
+  , Not
+  , JmpIf (9 + offset) -- #loop
+  , Pop
+  , Pop
+  , Swap
+  , Pop
+  , Exit
+  , Dig3 -- #loop 9
+  , Dig3
+  , Dup
+  , Dig2
+  , Add
+  , Dig3
+  , Push 1
+  , Add
+  , Dig3
+  , Jmp (0 + offset) -- #begin
+  ]
+
+callFibProgram =
+  let callingCode = [Push 0, Push 1, Push 0, Push 22, Call 6, Exit]
+   in callingCode ++ fibonacciProgram2 (length callingCode)
+
+fibProgram offset =
+  let callingCode = [Push 0, Push 1, Push 0, Dig3, Call (6 + offset), Exit]
+   in callingCode ++ fibonacciProgram2 (length callingCode + offset)
+
+callNestedFibProgram =
+  let callingCode = [Push 22, Call 3, Exit]
+   in callingCode ++ fibProgram (length callingCode)
+
+fibr n = fibr' n
+  where
+    fibr' 0 = 1
+    fibr' 1 = 1
+    fibr' n = fibr' (n - 1) + fibr' (n - 2)
+
+-- [n] dup
+-- [n n] push 2
+-- [n n 2] lessthan
+-- [n b] not
+-- [n !b] jmpIf #next
+-- [n] pop
+-- [] push 1
+-- [1] ret
+-- #next
+-- [n] dup
+-- [n n] push 1
+-- [n n 1] sub
+-- [n (n-1)] call fibr'
+-- [n f1] swap
+-- [f1 n] push 2
+-- [f1 n 2] sub
+-- [f1 (n-2)] call fibr'
+-- [f1 f2] add
+-- [fn] ret
+recFibProgram offset =
+  [ Dup -- #begin 0
+  , Push 2
+  , LessThan
+  , Not
+  , JmpIf (8 + offset) -- #next
+  , Pop
+  , Push 1
+  , Ret
+  , Dup -- #next
+  , Push 1
+  , Sub
+  , Call (0 + offset)
+  , Swap
+  , Push 2
+  , Sub
+  , Call (0 + offset)
+  , Add
+  , Ret
+  ]
+
+callRecFibProgram =
+  let callingCode = [Push 22, Call 3, Exit]
+   in callingCode ++ recFibProgram (length callingCode)
+
+programs =
+  [fibonacciProgram, callFibProgram, callNestedFibProgram, callRecFibProgram]
 
 run prg = runMachine untilHalt (MachineState prg 0 [] [])
 

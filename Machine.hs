@@ -23,6 +23,11 @@ data Instruction
   | Exit
   | Push Int
   | Pop
+  | Swap
+  | Dup
+  | Dup2
+  | Dig2
+  | Dig3
   | Add
   | Sub
   | Mul
@@ -32,11 +37,6 @@ data Instruction
   | And
   | Or
   | Not
-  | Dup
-  | Dup2
-  | Swap
-  | Dig2
-  | Dig3
   | Jmp IP
   | JmpIf IP
   | Store Adr
@@ -130,18 +130,19 @@ swap =
       (x:y:xs) -> Right (st0 {stack = y : x : xs}, ())
       _        -> Left (st0, Just "Swap on stack without 2 elements")
 
-insertHeap :: Adr -> HeapValue -> Machine ()
-insertHeap k v =
-  Machine $ \st0@(MachineState {heap}) ->
-    Right (st0 {heap = Map.insert k v heap}, ())
+dup :: Machine ()
+dup =
+  Machine $ \st0@(MachineState {stack}) ->
+    case stack of
+      (x:xs) -> Right (st0 {stack = x : x : xs}, ())
+      _      -> Left (st0, Just "Dup on empty stack")
 
-readHeap :: Adr -> Machine HeapValue
-readHeap k =
-  Machine $ \st0@(MachineState {heap}) ->
-    case Map.lookup k heap of
-      Nothing ->
-        Left (st0, Just $ "Tried to read " ++ show k ++ " but it did not exist")
-      Just v -> Right (st0, v)
+dup2 :: Machine ()
+dup2 =
+  Machine $ \st0@(MachineState {stack}) ->
+    case stack of
+      (x:y:xs) -> Right (st0 {stack = x : y : x : y : xs}, ())
+      _        -> Left (st0, Just "Dup on stack with fewer than 2 elements")
 
 dig2 :: Machine ()
 dig2 =
@@ -157,19 +158,18 @@ dig3 =
       (x:y:z:n:xs) -> Right (st0 {stack = n : x : y : z : xs}, ())
       _ -> Left (st0, Just "Dig 3 on stack with fewer than 4 elements")
 
-dup :: Machine ()
-dup =
-  Machine $ \st0@(MachineState {stack}) ->
-    case stack of
-      (x:xs) -> Right (st0 {stack = x : x : xs}, ())
-      _      -> Left (st0, Just "Dup on empty stack")
+insertHeap :: Adr -> HeapValue -> Machine ()
+insertHeap k v =
+  Machine $ \st0@(MachineState {heap}) ->
+    Right (st0 {heap = Map.insert k v heap}, ())
 
-dup2 :: Machine ()
-dup2 =
-  Machine $ \st0@(MachineState {stack}) ->
-    case stack of
-      (x:y:xs) -> Right (st0 {stack = x : y : x : y : xs}, ())
-      _        -> Left (st0, Just "Dup on stack with fewer than 2 elements")
+lookupHeap :: Adr -> Machine HeapValue
+lookupHeap k =
+  Machine $ \st0@(MachineState {heap}) ->
+    case Map.lookup k heap of
+      Nothing ->
+        Left (st0, Just $ "Tried to read " ++ show k ++ " but it did not exist")
+      Just v -> Right (st0, v)
 
 debugState :: String -> Machine ()
 debugState s =
@@ -196,9 +196,6 @@ popCallStack =
     case callStack of
       []     -> Left (st0, Just "Pop on empty call stack")
       (x:xs) -> Right (st0 {callStack = xs}, x)
-
-getCounter :: Machine Int
-getCounter = Machine $ \st0@(MachineState {counter}) -> Right (st0, counter)
 
 nextInstr :: Machine Instruction
 nextInstr =
@@ -267,7 +264,7 @@ store adr = do
 
 load :: Adr -> Machine ()
 load adr = do
-  d <- readHeap adr
+  d <- lookupHeap adr
   pushList d
 
 callStatic :: Machine ()
@@ -308,6 +305,11 @@ oneInstruction = do
     Exit         -> exit
     Push i       -> push i
     Pop          -> Monad.void pop
+    Swap         -> swap
+    Dup          -> dup
+    Dup2         -> dup2
+    Dig2         -> dig2
+    Dig3         -> dig3
     Add          -> intOp (+)
     Sub          -> intOp (-)
     Mul          -> intOp (*)
@@ -317,11 +319,6 @@ oneInstruction = do
     And          -> boolOp (&&)
     Or           -> boolOp (||)
     Not          -> boolNot
-    Dup          -> dup
-    Dup2         -> dup2
-    Swap         -> swap
-    Dig2         -> dig2
-    Dig3         -> dig3
     Jmp p        -> jmp p
     JmpIf p      -> jmpIf p
     Store a      -> store a

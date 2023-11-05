@@ -1,14 +1,22 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 
+{-# HLINT ignore "Use newtype instead of data" #-}
 module Machine
   ( Instruction(..)
   , MachineResult
+  , IP
   , stack
   , run
   ) where
 
+import           Control.Monad (replicateM)
 import qualified Control.Monad as Monad
+import qualified Data.Map      as Map
 import qualified Debug.Trace   as Debug
+
+type IP = Int
+
+type Adr = Int
 
 data Instruction
   = Noop
@@ -19,6 +27,7 @@ data Instruction
   | Sub
   | Mul
   | LessThan
+  | GreaterThan
   | Equals
   | And
   | Or
@@ -30,21 +39,37 @@ data Instruction
   | Dig3
   | Jmp IP
   | JmpIf IP
-  | Call IP
+  | Store Adr
+  | Load Adr
+  | Call
+  | CallDynamic
   | Ret
   | DebugState String
   deriving (Show)
-
-type IP = Int
 
 type Instructions = [Instruction]
 
 type Stack = [Int]
 
+tagStaticFn = 0
+
+tagDynamicFn = 1
+
+data Function
+  = Static IP
+  | Dynamic Adr
+  deriving (Show)
+
+type HeapValue = [Int]
+
+type Heap = Map.Map Adr HeapValue
+
 data MachineState =
   MachineState
     { instrs    :: Instructions
     , ip        :: IP
+    , counter   :: Int
+    , heap      :: Heap
     , callStack :: [IP]
     , stack     :: Stack
     }
@@ -83,8 +108,13 @@ noop = Machine $ \st0 -> Right (st0, ())
 
 exit = Machine $ \st0 -> Left (st0, Nothing)
 
+halt f = Machine $ \st0 -> Left (st0, Just f)
+
 push :: Int -> Machine ()
 push i = Machine $ \st0 -> pure (st0 {stack = i : stack st0}, ())
+
+pushList :: [Int] -> Machine ()
+pushList i = Machine $ \st0 -> pure (st0 {stack = i ++ stack st0}, ())
 
 pop :: Machine Int
 pop =
@@ -99,6 +129,19 @@ swap =
     case stack of
       (x:y:xs) -> Right (st0 {stack = y : x : xs}, ())
       _        -> Left (st0, Just "Swap on stack without 2 elements")
+
+insertHeap :: Adr -> HeapValue -> Machine ()
+insertHeap k v =
+  Machine $ \st0@(MachineState {heap}) ->
+    Right (st0 {heap = Map.insert k v heap}, ())
+
+readHeap :: Adr -> Machine HeapValue
+readHeap k =
+  Machine $ \st0@(MachineState {heap}) ->
+    case Map.lookup k heap of
+      Nothing ->
+        Left (st0, Just $ "Tried to read " ++ show k ++ " but it did not exist")
+      Just v -> Right (st0, v)
 
 dig2 :: Machine ()
 dig2 =
@@ -154,12 +197,17 @@ popCallStack =
       []     -> Left (st0, Just "Pop on empty call stack")
       (x:xs) -> Right (st0 {callStack = xs}, x)
 
+getCounter :: Machine Int
+getCounter = Machine $ \st0@(MachineState {counter}) -> Right (st0, counter)
+
 nextInstr :: Machine Instruction
 nextInstr =
-  Machine $ \st0@(MachineState {instrs, ip}) ->
-    case elemAt ip instrs of
-      Nothing    -> Left (st0, Just "IP out of bounds")
-      Just instr -> Right (st0 {ip = ip + 1}, instr)
+  Machine $ \st0@(MachineState {instrs, ip, counter}) ->
+    case (elemAt ip instrs, counter) of
+      _
+        | counter > 10000 -> Left (st0, Just "Counter reached 10000")
+      (Nothing, _) -> Left (st0, Just "IP out of bounds")
+      (Just instr, _) -> Right (st0 {ip = ip + 1, counter = counter + 1}, instr)
     --- | Why is this not in prelude?
   where
     elemAt :: Int -> [a] -> Maybe a
@@ -179,8 +227,8 @@ jmp p =
 
 intOp :: (Int -> Int -> Int) -> Machine ()
 intOp fn = do
-  b <- pop
   a <- pop
+  b <- pop
   push $ fn a b
 
 boolToInt True  = 1
@@ -191,14 +239,14 @@ intToBool _ = True
 
 comparison :: (Int -> Int -> Bool) -> Machine ()
 comparison fn = do
-  b <- pop
   a <- pop
+  b <- pop
   push $ boolToInt $ fn a b
 
 boolOp :: (Bool -> Bool -> Bool) -> Machine ()
 boolOp fn = do
-  b <- pop
   a <- pop
+  b <- pop
   push $ boolToInt $ fn (intToBool a) (intToBool b)
 
 boolNot :: Machine ()
@@ -208,13 +256,44 @@ boolNot = do
 
 jmpIf :: IP -> Machine ()
 jmpIf p = do
-  b <- pop
-  Monad.when (intToBool b) $ jmp p
+  a <- pop
+  Monad.when (intToBool a) $ jmp p
 
-call :: IP -> Machine ()
-call p = do
+store :: Adr -> Machine ()
+store adr = do
+  n <- pop
+  d <- replicateM n pop
+  insertHeap adr d
+
+load :: Adr -> Machine ()
+load adr = do
+  d <- readHeap adr
+  pushList d
+
+callStatic :: Machine ()
+callStatic = do
   pushCallStack
+  p <- pop
   jmp p
+
+-- | Expects the function type on top of the stack, then traverses closures until a closure with static instruction pointer is encountered
+callDynamic :: Machine ()
+callDynamic = do
+  fnType <- pop
+  case fnType of
+    _
+      | fnType == tagStaticFn -> callStatic
+    _
+      | fnType == tagDynamicFn -> do
+        adr <- pop
+        load adr
+        callDynamic
+    _ ->
+      halt $
+      "Unrecognized function type tag " ++
+      show fnType ++
+      ", expected either static (" ++
+      show tagStaticFn ++ ") or dynamic (" ++ show tagDynamicFn ++ ")"
 
 ret :: Machine ()
 ret = do
@@ -233,6 +312,7 @@ oneInstruction = do
     Sub          -> intOp (-)
     Mul          -> intOp (*)
     LessThan     -> comparison (<)
+    GreaterThan  -> comparison (>)
     Equals       -> comparison (==)
     And          -> boolOp (&&)
     Or           -> boolOp (||)
@@ -244,13 +324,15 @@ oneInstruction = do
     Dig3         -> dig3
     Jmp p        -> jmp p
     JmpIf p      -> jmpIf p
-    Call p       -> call p
+    Store a      -> store a
+    Load a       -> load a
+    Call         -> callStatic
+    CallDynamic  -> callDynamic
     Ret          -> ret
     DebugState s -> debugState s
 
-untilHalt :: Machine ()
-untilHalt = loop
+run :: Instructions -> MachineResult ()
+run instructions =
+  runMachine loop (MachineState instructions 0 0 Map.empty [] [])
   where
     loop = oneInstruction >> loop
-
-run prg = runMachine untilHalt (MachineState prg 0 [] [])

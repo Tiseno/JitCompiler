@@ -1,4 +1,4 @@
-import           Machine (Instruction (..), MachineResult, run, stack)
+import           Machine (Instruction (..), MachineResult, run)
 
 -- fib n = fib' n 0 1 0
 --   where
@@ -29,7 +29,15 @@ fibFunction' offset =
 
 fibFunction offset =
   let callingCode =
-        [Push 0, Push 1, Push 0, Dig3, Push (8 + offset), Push 0, CallDynamic, Ret]
+        [ Push 0
+        , Push 1
+        , Push 0
+        , Dig3
+        , Push (8 + offset)
+        , Push 0
+        , CallDynamic
+        , Ret
+        ]
    in callingCode ++ fibFunction' (length callingCode + offset)
 
 callFibProgram =
@@ -80,9 +88,25 @@ callFibRProgram =
 -- [y] Ret
 max3Program =
   let main max3Adr =
-        [Noop, Push 56, Push 1231, Push 5040, Push max3Adr, Push 0, CallDynamic, Exit]
+        [ Noop
+        , Push 56
+        , Push 1231
+        , Push 5040
+        , Push max3Adr
+        , Push 0
+        , CallDynamic
+        , Exit
+        ]
       max offset = [Dup2, LessThan, JmpIf (4 + offset), Swap, Pop, Ret]
-      max3 maxAdr = [Push maxAdr, Push 0, CallDynamic, Push maxAdr, Push 0, CallDynamic, Ret]
+      max3 maxAdr =
+        [ Push maxAdr
+        , Push 0
+        , CallDynamic
+        , Push maxAdr
+        , Push 0
+        , CallDynamic
+        , Ret
+        ]
       maxAdr = length (main 0)
       max3Adr = length (main 0) + length (max 0)
       mainA = main max3Adr
@@ -106,7 +130,15 @@ max3Program =
 --
 max3Program2 =
   let main max3Adr =
-        [Noop, Push 11, Push 100, Push 50, Push max3Adr, Push 0, CallDynamic, Exit]
+        [ Noop
+        , Push 11
+        , Push 100
+        , Push 50
+        , Push max3Adr
+        , Push 0
+        , CallDynamic
+        , Exit
+        ]
       max3 offset =
         [ Dup2
         , LessThan

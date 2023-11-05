@@ -1,6 +1,3 @@
-{-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
-
-{-# HLINT ignore "Use newtype instead of data" #-}
 module Machine
   ( Instruction(..)
   , MachineResult
@@ -9,8 +6,8 @@ module Machine
   , run
   ) where
 
-import           Control.Monad (replicateM)
 import qualified Control.Monad as Monad
+import qualified Data.Array    as Array
 import qualified Data.Map      as Map
 import qualified Debug.Trace   as Debug
 
@@ -47,18 +44,13 @@ data Instruction
   | DebugState String
   deriving (Show)
 
-type Instructions = [Instruction]
+type Instructions = Array.Array IP Instruction
 
 type Stack = [Int]
 
 tagStaticFn = 0
 
 tagDynamicFn = 1
-
-data Function
-  = Static IP
-  | Dynamic Adr
-  deriving (Show)
 
 type HeapValue = [Int]
 
@@ -120,8 +112,8 @@ pop :: Machine Int
 pop =
   Machine $ \st0@(MachineState {stack}) ->
     case stack of
-      []     -> Left (st0, Just "Pop on empty stack")
       (x:xs) -> Right (st0 {stack = xs}, x)
+      _      -> Left (st0, Just "Pop on empty stack")
 
 swap :: Machine ()
 swap =
@@ -168,7 +160,10 @@ lookupHeap k =
   Machine $ \st0@(MachineState {heap}) ->
     case Map.lookup k heap of
       Nothing ->
-        Left (st0, Just $ "Tried to read " ++ show k ++ " but it did not exist")
+        Left
+          ( st0
+          , Just $
+            "Tried to lookup " ++ show k ++ " on the heap but it did not exist")
       Just v -> Right (st0, v)
 
 debugState :: String -> Machine ()
@@ -180,7 +175,8 @@ debugState s =
               Debug.trace
                 ("\nDebug " ++
                  s ++
-                 "\ninstr: " ++ show (instrs !! ip) ++ "\nstack: " ++ show stack)
+                 "\ninstr: " ++
+                 show (instrs Array.! ip) ++ "\nstack: " ++ show stack)
                 instrs
           }
       , ())
@@ -196,24 +192,6 @@ popCallStack =
     case callStack of
       []     -> Left (st0, Just "Pop on empty call stack")
       (x:xs) -> Right (st0 {callStack = xs}, x)
-
-nextInstr :: Machine Instruction
-nextInstr =
-  Machine $ \st0@(MachineState {instrs, ip, counter}) ->
-    case (elemAt ip instrs, counter) of
-      _
-        | counter > 10000 -> Left (st0, Just "Counter reached 10000")
-      (Nothing, _) -> Left (st0, Just "IP out of bounds")
-      (Just instr, _) -> Right (st0 {ip = ip + 1, counter = counter + 1}, instr)
-    --- | Why is this not in prelude?
-  where
-    elemAt :: Int -> [a] -> Maybe a
-    elemAt i = elemAt' 0 i
-      where
-        elemAt' x i (e:es)
-          | x == i = Just e
-        elemAt' x i (e:es) = elemAt' (x + 1) i es
-        elemAt' _ _ _ = Nothing
 
 jmp :: IP -> Machine ()
 jmp p =
@@ -259,7 +237,7 @@ jmpIf p = do
 store :: Adr -> Machine ()
 store adr = do
   n <- pop
-  d <- replicateM n pop
+  d <- Monad.replicateM n pop
   insertHeap adr d
 
 load :: Adr -> Machine ()
@@ -297,6 +275,19 @@ ret = do
   ip <- popCallStack
   jmp ip
 
+counterMax = 10000
+
+nextInstr :: Machine Instruction
+nextInstr =
+  Machine $ \st0@(MachineState {instrs, ip, counter}) ->
+    case True of
+      _
+        | counter > counterMax ->
+          Left (st0, Just $ "Counter reached " ++ show counterMax)
+      _
+        | ip >= length instrs -> Left (st0, Just "IP out of bounds")
+      _ -> Right (st0 {ip = ip + 1, counter = counter + 1}, instrs Array.! ip)
+
 oneInstruction :: Machine ()
 oneInstruction = do
   instr <- nextInstr
@@ -328,8 +319,9 @@ oneInstruction = do
     Ret          -> ret
     DebugState s -> debugState s
 
-run :: Instructions -> MachineResult ()
+run :: [Instruction] -> MachineResult ()
 run instructions =
-  runMachine loop (MachineState instructions 0 0 Map.empty [] [])
+  let instrs = Array.listArray (0, length instructions - 1) instructions
+   in runMachine loop (MachineState instrs 0 0 Map.empty [] [])
   where
     loop = oneInstruction >> loop

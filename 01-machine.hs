@@ -1,4 +1,5 @@
-import           Machine (Instruction (..), MachineResult, run, tagStaticFn, tagDynamicFn)
+import           Machine (Instruction (..), MachineResult, run,
+                          showMachineResult, tagDynamicFn, tagStaticFn)
 
 -- fib n = fib' n 0 1 0
 --   where
@@ -40,7 +41,7 @@ fibFunction offset =
         ]
    in callingCode ++ fibFunction' (length callingCode + offset)
 
-callFibProgram =
+fibProgram =
   let callingCode = [Push 10, Push 5, Push tagStaticFn, CallDynamic, Exit]
    in callingCode ++ fibFunction (length callingCode)
 
@@ -76,7 +77,7 @@ fibRFunction offset =
   , Ret
   ]
 
-callFibRProgram =
+fibRProgram =
   let callingCode = [Push 10, Push 5, Push tagStaticFn, CallDynamic, Exit]
    in callingCode ++ fibRFunction (length callingCode)
 
@@ -265,15 +266,14 @@ closureProgram2 =
       max3A = max3 $ length (main 0)
    in mainA ++ max3A
 
-programs = [max3Program, max3Program2, closureProgram, closureProgram2]
-
-showResult :: MachineResult () -> String
-showResult mr =
-  (case mr of
-     Left (ms, Just msg) -> show ms ++ "\n" ++ msg
-     Left (ms, Nothing)  -> show ms
-     Right (ms, ())      -> show ms) ++
-  "\n"
+programs =
+  [ fibProgram
+  , fibRProgram
+  , max3Program
+  , max3Program2
+  , closureProgram
+  , closureProgram2
+  ]
 
 main = do
-  mapM_ (putStrLn . showResult . run) programs
+  mapM_ (putStrLn . showMachineResult . run) programs

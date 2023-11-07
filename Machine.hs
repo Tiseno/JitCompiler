@@ -1,9 +1,16 @@
 module Machine
   ( Instruction(..)
   , MachineResult
+  , MachineState(..)
+  , showMachineResult
   , IP
-  , stack
+  , Adr
   , run
+  , tagStaticFn
+  , tagDynamicFn
+  , tagPrimitiveFnAdd
+  , tagPrimitiveFnSub
+  , tagPrimitiveFnMul
   ) where
 
 import qualified Control.Monad as Monad
@@ -48,9 +55,15 @@ type Instructions = Array.Array IP Instruction
 
 type Stack = [Int]
 
-tagStaticFn = 0
+tagStaticFn = 100
 
-tagDynamicFn = 1
+tagDynamicFn = 200
+
+tagPrimitiveFnAdd = 300
+
+tagPrimitiveFnSub = 400
+
+tagPrimitiveFnMul = 500
 
 type HeapValue = [Int]
 
@@ -66,6 +79,27 @@ data MachineState =
     , stack     :: Stack
     }
   deriving (Show)
+
+showMachineState :: MachineState -> String
+showMachineState (MachineState instrs ip counter heap callStack stack) =
+  "MachineState" ++
+  "\n  instrs: " ++
+  show (Array.elems instrs) ++
+  "\n  ip: " ++
+  show ip ++
+  "\n  counter: " ++
+  show counter ++
+  "\n  heap: " ++
+  show heap ++
+  "\n  callStack: " ++ show callStack ++ "\n  stack: " ++ show stack
+
+showMachineResult :: MachineResult () -> String
+showMachineResult mr =
+  (case mr of
+     Left (ms, Just msg) -> showMachineState ms ++ "\n\nERROR: " ++ msg
+     Left (ms, Nothing)  -> showMachineState ms
+     Right (ms, ())      -> showMachineState ms) ++
+  "\n"
 
 type MachineResult a = Either (MachineState, Maybe String) (MachineState, a)
 
@@ -256,6 +290,12 @@ callDynamic :: Machine ()
 callDynamic = do
   fnType <- pop
   case fnType of
+    _
+      | fnType == tagPrimitiveFnAdd -> intOp (+)
+    _
+      | fnType == tagPrimitiveFnSub -> intOp (-)
+    _
+      | fnType == tagPrimitiveFnMul -> intOp (*)
     _
       | fnType == tagStaticFn -> callStatic
     _

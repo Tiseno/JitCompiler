@@ -322,7 +322,6 @@ callStatic = do
   p <- pop
   jmp p
 
--- | Expects the function type on top of the stack, then traverses closures until a closure with static instruction pointer is encountered
 callDynamic :: Machine ()
 callDynamic = do
   fnType <- pop

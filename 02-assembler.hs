@@ -81,9 +81,7 @@ naiveFibProgram =
 
 testProgram :: String -> Expr -> ([Int], Maybe String) -> IO ()
 testProgram =
-  test
-    (either (first stack) (bimap stack (const Nothing)) .
-     run . fst . makeProgram False)
+  test (either (first stack) (bimap stack (const Nothing)) . run . makeProgram)
 
 main =
   describe

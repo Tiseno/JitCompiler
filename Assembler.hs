@@ -47,7 +47,7 @@ typeOf (Id _ t) = t
 typeOf (Const _) = EInt
 
 data Label =
-  Label String Bool
+  Label String Int Bool
   deriving (Show, Eq, Ord)
 
 data Asm
@@ -81,8 +81,7 @@ newLabelFor :: Bool -> String -> State AssembleState Label
 newLabelFor dyn x = do
   (c, s) <- get
   put (c + 1, s)
-  let l = x ++ "." ++ show c
-  pure $ Label l dyn
+  pure $ Label x c dyn
 
 newStaticLabelFor :: String -> State AssembleState Label
 newStaticLabelFor = newLabelFor False
@@ -96,8 +95,8 @@ saveStatic x = do
   put (c, x : s)
 
 stackEffectOfType :: EType -> StackEffect
-stackEffectOfType EBool     = StackBool
-stackEffectOfType EInt      = StackInt
+stackEffectOfType EBool     = StackPrimitive
+stackEffectOfType EInt      = StackPrimitive
 stackEffectOfType (EFn _ _) = StackFunctionRef
 
 stackEffectOfFnType (EFn _ r) = stackEffectOfType r
@@ -106,14 +105,12 @@ stackEffectOfFnType t =
 
 sizeOf :: StackEffect -> Int
 sizeOf UnknownStackEffect = error "Cannot get size of an unknown stack effect"
-sizeOf StackBool          = 1
-sizeOf StackInt           = 1
+sizeOf StackPrimitive     = 1
 sizeOf StackFunctionRef   = 2
 
 data StackEffect
   = UnknownStackEffect
-  | StackBool
-  | StackInt
+  | StackPrimitive
   | StackFunctionRef
 
 optimize asm = optimizeLoadSwap $ optimizeLoad $ optimizeDup asm
@@ -131,7 +128,7 @@ optimizeLoad ((AInstr (Push _)):(AStore l1):(ALoad l2):xs)
 optimizeLoad (x:xs) = x : optimizeLoad xs
 optimizeLoad [] = []
 
--- Same thing, is probably generally fine but we cannot ensure that we do not break anything
+-- This does not work if we load it again afterwards (it will not get stored)
 optimizeLoadSwap :: [Asm] -> [Asm]
 optimizeLoadSwap (p1@(AInstr (Push _)):p2@(AInstr (Push _)):(AInstr (Push 2)):(AStore l1):p3@(AInstr (Push _)):(ALoad l2):xs)
   | l1 == l2 = p3 : p1 : p2 : optimizeLoadSwap xs
@@ -141,43 +138,43 @@ optimizeLoadSwap (x:xs) = x : optimizeLoadSwap xs
 optimizeLoadSwap [] = []
 
 assemble :: Ctx -> Expr -> State AssembleState (StackEffect, [Asm])
-assemble ctx (Const i) = pure (StackInt, [AInstr $ Push i])
+assemble ctx (Const i) = pure (StackPrimitive, [AInstr $ Push i])
 assemble ctx (App (App (Id "&&" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
-  pure (StackBool, asm2 ++ asm1 ++ [AInstr And])
+  pure (StackPrimitive, asm2 ++ asm1 ++ [AInstr And])
 assemble ctx (App (App (Id "||" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
-  pure (StackBool, asm2 ++ asm1 ++ [AInstr Or])
+  pure (StackPrimitive, asm2 ++ asm1 ++ [AInstr Or])
 assemble ctx (App (App (Id "==" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
-  pure (StackBool, asm2 ++ asm1 ++ [AInstr Equals])
+  pure (StackPrimitive, asm2 ++ asm1 ++ [AInstr Equals])
 assemble ctx (App (App (Id "<" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
-  pure (StackBool, asm2 ++ asm1 ++ [AInstr LessThan])
+  pure (StackPrimitive, asm2 ++ asm1 ++ [AInstr LessThan])
 assemble ctx (App (App (Id ">" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
-  pure (StackBool, asm2 ++ asm1 ++ [AInstr GreaterThan])
+  pure (StackPrimitive, asm2 ++ asm1 ++ [AInstr GreaterThan])
 assemble ctx (App (App (Id "+" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
-  pure (StackInt, asm2 ++ asm1 ++ [AInstr Add])
+  pure (StackPrimitive, asm2 ++ asm1 ++ [AInstr Add])
 assemble ctx (App (App (Id "-" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
-  pure (StackInt, asm2 ++ asm1 ++ [AInstr Sub])
+  pure (StackPrimitive, asm2 ++ asm1 ++ [AInstr Sub])
 assemble ctx (App (App (Id "*" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
-  pure (StackInt, asm2 ++ asm1 ++ [AInstr Mul])
+  pure (StackPrimitive, asm2 ++ asm1 ++ [AInstr Mul])
 assemble ctx (App (App (Id "/" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
-  pure (StackInt, asm2 ++ asm1 ++ [AInstr Div])
+  pure (StackPrimitive, asm2 ++ asm1 ++ [AInstr Div])
 assemble ctx (App (Id "&&" _) e) = do
   (_, asm) <- assemble ctx e
   pure (StackFunctionRef, asm ++ [AInstr $ Push tagPrimitiveFnAnd])
@@ -244,16 +241,6 @@ assemble ctx (If cond true false) = do
       falseAsm ++
       [AJmp endLabel, AJmpLabel trueLabel] ++ trueAsm ++ [AJmpLabel endLabel])
 
-readLabel :: Label -> Int
-readLabel (Label l dyn) =
-  let labelType =
-        if dyn
-          then "dynamic"
-          else "static"
-   in case Text.readMaybe $ drop 1 $ dropWhile (/= '.') l of
-        Nothing -> error $ "Could not read " ++ labelType ++ " label " ++ l
-        Just i  -> i
-
 type LabelAdrMapping = Map.Map Label Adr
 
 getAdr :: LabelAdrMapping -> Label -> Int
@@ -264,42 +251,34 @@ getAdr map l =
 
 toInstruction :: LabelAdrMapping -> Asm -> [Instruction]
 toInstruction _ (AInstr i)                  = [i]
-toInstruction _ (AStore l@(Label _ True))   = [StoreDynamic (readLabel l)]
-toInstruction _ (ALoad l@(Label _ True))    = [LoadDynamic (readLabel l)]
-toInstruction _ (AStore l@(Label _ False))  = [Store (readLabel l)]
-toInstruction _ (ALoad l@(Label _ False))   = [Load (readLabel l)]
+toInstruction _ (AStore (Label _ i True))   = [StoreDynamic i]
+toInstruction _ (ALoad (Label _ i True))    = [LoadDynamic i]
+toInstruction _ (AStore (Label _ i False))  = [Store i]
+toInstruction _ (ALoad (Label _ i False))   = [Load i]
 toInstruction adrMapping (APushStaticRef l) = [Push (getAdr adrMapping l)]
 toInstruction _ (AJmpLabel l)               = [Noop] -- TODO we can prevent this by counting real instructions
 toInstruction adrMapping (AJmpIf l)         = [JmpIf (getAdr adrMapping l)]
 
-makeProgram shouldOpt expr =
+makeProgram expr =
   let ((_, asm), (_, staticCode0)) =
         runState (assemble Map.empty expr) (1000000, [])
       mainCode0 = asm ++ [AInstr Exit]
-      mainCode =
-        if shouldOpt
-          then optimize mainCode0
-          else mainCode0
-      staticCode =
-        if shouldOpt
-          then fmap (Bifunctor.second optimize) staticCode0
-          else staticCode0
+      mainCode = mainCode0
+      staticCode = staticCode0
       labelMapping = collectStaticLabels Map.empty mainCode staticCode
       code = mainCode ++ concatMap snd staticCode
       labelMapping' = collectJmpLabels labelMapping code
       codeWithJmpLabels = assignJmpLabels labelMapping' code
-      instructions = concatMap (toInstruction labelMapping') codeWithJmpLabels
-   in (instructions, staticCode0)
+      program = concatMap (toInstruction labelMapping') codeWithJmpLabels
+   in program
   where
     collectStaticLabels ::
          LabelAdrMapping -> [Asm] -> [(Label, [Asm])] -> LabelAdrMapping
     collectStaticLabels mapping mainCode staticCode =
-      snd $ foldl foldStaticLabels (length mainCode, mapping) staticCode
-    foldStaticLabels ::
-         (IP, LabelAdrMapping) -> (Label, [Asm]) -> (IP, LabelAdrMapping)
-    foldStaticLabels (ip, mapping) (l, asm) =
-      let offset = length asm
-       in (ip + offset, Map.insert l ip mapping)
+      snd $ foldl f (length mainCode, mapping) staticCode
+      where
+        f :: (IP, LabelAdrMapping) -> (Label, [Asm]) -> (IP, LabelAdrMapping)
+        f (ip, mapping) (l, asm) = (ip + length asm, Map.insert l ip mapping)
     collectJmpLabels :: LabelAdrMapping -> [Asm] -> LabelAdrMapping
     collectJmpLabels mapping asm = foldl f mapping $ zip [0 ..] asm
       where

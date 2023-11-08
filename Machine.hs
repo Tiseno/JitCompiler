@@ -45,6 +45,8 @@ data Instruction
   | JmpIf IP
   | Store Adr
   | Load Adr
+  | StoreDynamic Adr
+  | LoadDynamic Adr
   | Call
   | CallDynamic
   | Ret
@@ -227,6 +229,10 @@ popCallStack =
       []     -> Left (st0, Just "Pop on empty call stack")
       (x:xs) -> Right (st0 {callStack = xs}, x)
 
+getCallStackFrame :: Machine IP
+getCallStackFrame =
+  Machine $ \st0@(MachineState {callStack}) -> Right (st0, length callStack)
+
 jmp :: IP -> Machine ()
 jmp p =
   Machine $ \st0@(MachineState {instrs, ip}) ->
@@ -279,6 +285,19 @@ load adr = do
   d <- lookupHeap adr
   pushList d
 
+storeDynamic :: Adr -> Machine ()
+storeDynamic adr = do
+  n <- pop
+  d <- Monad.replicateM n pop
+  csf <- getCallStackFrame
+  insertHeap (adr * csf) d
+
+loadDynamic :: Adr -> Machine ()
+loadDynamic adr = do
+  csf <- getCallStackFrame
+  d <- lookupHeap (adr * csf)
+  pushList d
+
 callStatic :: Machine ()
 callStatic = do
   pushCallStack
@@ -315,12 +334,17 @@ ret = do
   ip <- popCallStack
   jmp ip
 
-counterMax = 10000
+counterMax = 1000000000
+
+callStackMax = 100000
 
 nextInstr :: Machine Instruction
 nextInstr =
-  Machine $ \st0@(MachineState {instrs, ip, counter}) ->
+  Machine $ \st0@(MachineState {instrs, ip, counter, callStack}) ->
     case True of
+      _
+        | length callStack > callStackMax ->
+          Left (st0, Just $ "Call stack reached " ++ show callStackMax)
       _
         | counter > counterMax ->
           Left (st0, Just $ "Counter reached " ++ show counterMax)
@@ -332,32 +356,34 @@ oneInstruction :: Machine ()
 oneInstruction = do
   instr <- nextInstr
   case instr of
-    Noop         -> noop
-    Exit         -> exit
-    Push i       -> push i
-    Pop          -> Monad.void pop
-    Swap         -> swap
-    Dup          -> dup
-    Dup2         -> dup2
-    Dig2         -> dig2
-    Dig3         -> dig3
-    Add          -> intOp (+)
-    Sub          -> intOp (-)
-    Mul          -> intOp (*)
-    LessThan     -> comparison (<)
-    GreaterThan  -> comparison (>)
-    Equals       -> comparison (==)
-    And          -> boolOp (&&)
-    Or           -> boolOp (||)
-    Not          -> boolNot
-    Jmp p        -> jmp p
-    JmpIf p      -> jmpIf p
-    Store a      -> store a
-    Load a       -> load a
-    Call         -> callStatic
-    CallDynamic  -> callDynamic
-    Ret          -> ret
-    DebugState s -> debugState s
+    Noop           -> noop
+    Exit           -> exit
+    Push i         -> push i
+    Pop            -> Monad.void pop
+    Swap           -> swap
+    Dup            -> dup
+    Dup2           -> dup2
+    Dig2           -> dig2
+    Dig3           -> dig3
+    Add            -> intOp (+)
+    Sub            -> intOp (-)
+    Mul            -> intOp (*)
+    LessThan       -> comparison (<)
+    GreaterThan    -> comparison (>)
+    Equals         -> comparison (==)
+    And            -> boolOp (&&)
+    Or             -> boolOp (||)
+    Not            -> boolNot
+    Jmp p          -> jmp p
+    JmpIf p        -> jmpIf p
+    Store a        -> store a
+    Load a         -> load a
+    StoreDynamic a -> storeDynamic a
+    LoadDynamic a  -> loadDynamic a
+    Call           -> callStatic
+    CallDynamic    -> callDynamic
+    Ret            -> ret
+    DebugState s   -> debugState s
 
 run :: [Instruction] -> MachineResult ()
 run instructions =

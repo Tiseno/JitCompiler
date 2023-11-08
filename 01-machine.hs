@@ -1,5 +1,6 @@
-import           Machine (Instruction (..), MachineResult, run,
-                          showMachineResult, tagDynamicFn, tagStaticFn)
+import           Data.Bifunctor
+import           Machine
+import           Test
 
 -- fib n = fib' n 0 1 0
 --   where
@@ -41,7 +42,7 @@ fibFunction offset =
         ]
    in callingCode ++ fibFunction' (length callingCode + offset)
 
-fibProgram =
+fibLoopProgram =
   let callingCode = [Push 10, Push 5, Push tagStaticFn, CallDynamic, Exit]
    in callingCode ++ fibFunction (length callingCode)
 
@@ -181,7 +182,7 @@ max3Program2 =
 --  jmp p
 -- [result]
 --
-closureProgram =
+closureMax3Program =
   let closureLabel = 0
       main max3Adr =
         [ Noop
@@ -229,7 +230,7 @@ closureProgram =
 -- [50 123 5040 max3IP 0] Call
 -- [result]
 --
-closureProgram2 =
+closureMax3Program2 =
   let closureLabel = 0
       closureLabel2 = 1
       main max3Adr =
@@ -266,14 +267,16 @@ closureProgram2 =
       max3A = max3 $ length (main 0)
    in mainA ++ max3A
 
-programs =
-  [ fibProgram
-  , fibRProgram
-  , max3Program
-  , max3Program2
-  , closureProgram
-  , closureProgram2
-  ]
+testProgram :: String -> [Instruction] -> [Int] -> IO ()
+testProgram = test (stack . either fst fst . run)
 
-main = do
-  mapM_ (putStrLn . showMachineResult . run) programs
+main =
+  describe
+    "machine"
+    [ testProgram "fib loop" fibLoopProgram [89]
+    , testProgram "fib rec" fibRProgram [89]
+    , testProgram "max3 1" max3Program [5040]
+    , testProgram "max3 2" max3Program2 [5040]
+    , testProgram "max3 3" closureMax3Program [5040]
+    , testProgram "max3 4" closureMax3Program2 [5040]
+    ]

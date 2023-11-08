@@ -5,3 +5,5 @@ machine:
 
 assembler:
 	runhaskell 02-assembler.hs
+
+all: machine assembler

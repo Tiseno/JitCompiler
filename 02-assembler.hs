@@ -1,55 +1,25 @@
-import           Assembler (EType (..), Expr (..), makeProgram)
-import           Machine   (run, showMachineResult)
+import           Assembler
+import           Data.Bifunctor
+import           Machine
+import           Test
 
 binary = EFn EInt (EFn EInt EInt)
 
 unary = EFn EInt EInt
 
-fiveMinusTwo = App (App (Id "-" binary) (Const 5)) (Const 2)
+nestedArithmetic = App (App (Id "*" binary) fiveMinusTwo) nineMinusFour
+  where
+    fiveMinusTwo = App (App (Id "-" binary) (Const 5)) (Const 2)
+    nineMinusFour = App (App (Id "-" binary) (Const 9)) (Const 4)
 
-nestedArithmetic = App (App (Id "+" binary) fiveMinusTwo) fiveMinusTwo
-
-partialPlus =
-  Let
-    "x"
-    (Const 3737)
-    (Let "x" (App (Id "+" binary) (Const 5040)) (App (Id "x" unary) (Const 33)))
-
-nestedLetClosure =
-  App (Let "x" (App (Id "+" binary) (Const 5040)) (Id "x" unary)) (Const 2323)
+plusClosure =
+  App (Let "x" (App (Id "+" binary) (Const 50)) (Id "x" unary)) (Const 23)
 
 absProgram =
   Let
     "double"
     (Abs ("x", EInt) (App (App (Id "+" binary) (Id "x" EInt)) (Id "x" EInt)))
     (App (Id "double" unary) (Const 44))
-
--- let rec = \x -> if x == 0 then x else (rec (x - 1))
--- in (rec 10)
-recProgram =
-  Let
-    "rec"
-    (Abs
-       ("x", EInt)
-       (If
-          (App (App (Id "==" binary) (Id "x" EInt)) (Const 13))
-          (Id "x" EInt)
-          (App
-             (Id "rec" binary)
-             (App (App (Id "-" binary) (Id "x" EInt)) (Const 1)))))
-    (App (Id "rec" unary) (Const 15))
-
--- let fn = \x:I -> ((+) x 3)
--- let f2 = \x:I -> (fn x)
--- in (f2:I->I 3)
-nestedLetFnProgram =
-  Let
-    "fn"
-    (Abs ("x", EInt) (App (App (Id "+" binary) (Id "x" EInt)) (Const 3)))
-    (Let
-       "fm"
-       (Abs ("x", EInt) (App (Id "fn" unary) (Id "x" EInt)))
-       (App (Id "fm" unary) (Const 3)))
 
 fibType = EFn EInt (EFn EInt (EFn EInt (EFn EInt EInt)))
 
@@ -109,9 +79,18 @@ naiveFibProgram =
                 (App (App (Id "-" binary) (Id "n" EInt)) (Const 2))))))
     (App (Id "fibr" unary) (Const 10))
 
-main = do
-  let (prg, staticLabels) = makeProgram False naiveFibProgram
-  putStr "\n"
-  print staticLabels
-  putStr "\n"
-  putStrLn $ showMachineResult $ run prg
+testProgram :: String -> Expr -> ([Int], Maybe String) -> IO ()
+testProgram =
+  test
+    (either (first stack) (bimap stack (const Nothing)) .
+     run . fst . makeProgram False)
+
+main =
+  describe
+    "assembling and running"
+    [ testProgram "(5 - 2) * (9 - 4)" nestedArithmetic ([15], Nothing)
+    , testProgram "+ closure" plusClosure ([73], Nothing)
+    , testProgram "function binding" absProgram ([88], Nothing)
+    , testProgram "tail fib" tailFibProgram ([89], Nothing)
+    , testProgram "naive fib" naiveFibProgram ([89], Nothing)
+    ]

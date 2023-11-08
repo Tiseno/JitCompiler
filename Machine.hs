@@ -8,9 +8,15 @@ module Machine
   , run
   , tagStaticFn
   , tagDynamicFn
+  , tagPrimitiveFnAnd
+  , tagPrimitiveFnOr
+  , tagPrimitiveFnEquals
+  , tagPrimitiveFnLessThan
+  , tagPrimitiveFnGreaterThan
   , tagPrimitiveFnAdd
   , tagPrimitiveFnSub
   , tagPrimitiveFnMul
+  , tagPrimitiveFnDiv
   ) where
 
 import qualified Control.Monad as Monad
@@ -32,15 +38,16 @@ data Instruction
   | Dup2
   | Dig2
   | Dig3
-  | Add
-  | Sub
-  | Mul
+  | Not
+  | And
+  | Or
   | LessThan
   | GreaterThan
   | Equals
-  | And
-  | Or
-  | Not
+  | Add
+  | Sub
+  | Mul
+  | Div
   | Jmp IP
   | JmpIf IP
   | Store Adr
@@ -50,22 +57,33 @@ data Instruction
   | Call
   | CallDynamic
   | Ret
-  | DebugState String
   deriving (Show)
 
 type Instructions = Array.Array IP Instruction
 
 type Stack = [Int]
 
-tagStaticFn = 100
+tagStaticFn = 11111
 
-tagDynamicFn = 200
+tagDynamicFn = 11112
 
-tagPrimitiveFnAdd = 300
+tagPrimitiveFnAnd = 11113
 
-tagPrimitiveFnSub = 400
+tagPrimitiveFnOr = 11114
 
-tagPrimitiveFnMul = 500
+tagPrimitiveFnEquals = 11115
+
+tagPrimitiveFnLessThan = 11116
+
+tagPrimitiveFnGreaterThan = 11117
+
+tagPrimitiveFnAdd = 11118
+
+tagPrimitiveFnSub = 11119
+
+tagPrimitiveFnMul = 11120
+
+tagPrimitiveFnDiv = 11120
 
 type HeapValue = [Int]
 
@@ -240,23 +258,16 @@ jmp p =
       then Left (st0, Just "IP out of bounds")
       else Right (st0 {ip = p}, ())
 
-intOp :: (Int -> Int -> Int) -> Machine ()
-intOp fn = do
-  a <- pop
-  b <- pop
-  push $ fn a b
-
 boolToInt True  = 1
 boolToInt False = 0
 
 intToBool 0 = False
 intToBool _ = True
 
-comparison :: (Int -> Int -> Bool) -> Machine ()
-comparison fn = do
+boolNot :: Machine ()
+boolNot = do
   a <- pop
-  b <- pop
-  push $ boolToInt $ fn a b
+  push $ boolToInt $ not (intToBool a)
 
 boolOp :: (Bool -> Bool -> Bool) -> Machine ()
 boolOp fn = do
@@ -264,10 +275,17 @@ boolOp fn = do
   b <- pop
   push $ boolToInt $ fn (intToBool a) (intToBool b)
 
-boolNot :: Machine ()
-boolNot = do
+comparison :: (Int -> Int -> Bool) -> Machine ()
+comparison fn = do
   a <- pop
-  push $ boolToInt $ not (intToBool a)
+  b <- pop
+  push $ boolToInt $ fn a b
+
+intOp :: (Int -> Int -> Int) -> Machine ()
+intOp fn = do
+  a <- pop
+  b <- pop
+  push $ fn a b
 
 jmpIf :: IP -> Machine ()
 jmpIf p = do
@@ -310,11 +328,23 @@ callDynamic = do
   fnType <- pop
   case fnType of
     _
+      | fnType == tagPrimitiveFnAnd -> boolOp (&&)
+    _
+      | fnType == tagPrimitiveFnOr -> boolOp (||)
+    _
+      | fnType == tagPrimitiveFnEquals -> comparison (==)
+    _
+      | fnType == tagPrimitiveFnLessThan -> comparison (<)
+    _
+      | fnType == tagPrimitiveFnGreaterThan -> comparison (>)
+    _
       | fnType == tagPrimitiveFnAdd -> intOp (+)
     _
       | fnType == tagPrimitiveFnSub -> intOp (-)
     _
       | fnType == tagPrimitiveFnMul -> intOp (*)
+    _
+      | fnType == tagPrimitiveFnDiv -> intOp div
     _
       | fnType == tagStaticFn -> callStatic
     _
@@ -365,15 +395,16 @@ oneInstruction = do
     Dup2           -> dup2
     Dig2           -> dig2
     Dig3           -> dig3
-    Add            -> intOp (+)
-    Sub            -> intOp (-)
-    Mul            -> intOp (*)
+    Not            -> boolNot
+    And            -> boolOp (&&)
+    Or             -> boolOp (||)
     LessThan       -> comparison (<)
     GreaterThan    -> comparison (>)
     Equals         -> comparison (==)
-    And            -> boolOp (&&)
-    Or             -> boolOp (||)
-    Not            -> boolNot
+    Add            -> intOp (+)
+    Sub            -> intOp (-)
+    Mul            -> intOp (*)
+    Div            -> intOp div
     Jmp p          -> jmp p
     JmpIf p        -> jmpIf p
     Store a        -> store a
@@ -383,7 +414,6 @@ oneInstruction = do
     Call           -> callStatic
     CallDynamic    -> callDynamic
     Ret            -> ret
-    DebugState s   -> debugState s
 
 run :: [Instruction] -> MachineResult ()
 run instructions =

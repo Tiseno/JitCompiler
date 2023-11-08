@@ -110,7 +110,7 @@ naiveFibProgram =
     (App (Id "fibr" unary) (Const 10))
 
 main = do
-  let (prg, staticLabels) = makeProgram True naiveFibProgram
+  let (prg, staticLabels) = makeProgram False naiveFibProgram
   putStr "\n"
   print staticLabels
   putStr "\n"

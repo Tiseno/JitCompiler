@@ -5,24 +5,23 @@ module Assembler
   ) where
 
 import           Control.Monad.Trans.State
-import qualified Data.Array                as Array
 import qualified Data.Bifunctor            as Bifunctor
-import qualified Data.Char                 as Char
 import qualified Data.Map                  as Map
-import qualified Debug.Trace               as Debug
 import           Machine                   (Adr, IP, Instruction (..),
                                             MachineResult, MachineState (..),
                                             run, showMachineResult,
                                             tagPrimitiveFnAdd,
-                                            tagPrimitiveFnMul,
+                                            tagPrimitiveFnAnd,
+                                            tagPrimitiveFnDiv,
+                                            tagPrimitiveFnEquals,
+                                            tagPrimitiveFnGreaterThan,
+                                            tagPrimitiveFnLessThan,
+                                            tagPrimitiveFnMul, tagPrimitiveFnOr,
                                             tagPrimitiveFnSub, tagStaticFn)
 import qualified Text.Read                 as Text
 
 type Name = String
 
--- TODO why do I even have types and stack effects as separate things?
--- A EInt should always be 1 and a function should always be 2 (primitive, static, or dynamic)
--- - Because of thunks, a EInt can actually be a closure
 data EType
   = EInt
   | EBool
@@ -119,17 +118,20 @@ data StackEffect
 
 optimize asm = optimizeLoadSwap $ optimizeLoad $ optimizeDup asm
 
+-- This will only work for loading primitives
 optimizeDup ((ALoad l1):(ALoad l2):xs)
   | l1 == l2 = ALoad l2 : AInstr Dup : optimizeDup xs
 optimizeDup (x:xs) = x : optimizeDup xs
 optimizeDup [] = []
 
+-- This does not work if we load it again afterwards (it will not get stored)
 optimizeLoad :: [Asm] -> [Asm]
 optimizeLoad ((AInstr (Push _)):(AStore l1):(ALoad l2):xs)
   | l1 == l2 = optimizeLoad xs
 optimizeLoad (x:xs) = x : optimizeLoad xs
 optimizeLoad [] = []
 
+-- Same thing, is probably generally fine but we cannot ensure that we do not break anything
 optimizeLoadSwap :: [Asm] -> [Asm]
 optimizeLoadSwap (p1@(AInstr (Push _)):p2@(AInstr (Push _)):(AInstr (Push 2)):(AStore l1):p3@(AInstr (Push _)):(ALoad l2):xs)
   | l1 == l2 = p3 : p1 : p2 : optimizeLoadSwap xs
@@ -140,6 +142,14 @@ optimizeLoadSwap [] = []
 
 assemble :: Ctx -> Expr -> State AssembleState (StackEffect, [Asm])
 assemble ctx (Const i) = pure (StackInt, [AInstr $ Push i])
+assemble ctx (App (App (Id "&&" _) e1) e2) = do
+  (_, asm2) <- assemble ctx e2
+  (_, asm1) <- assemble ctx e1
+  pure (StackBool, asm2 ++ asm1 ++ [AInstr And])
+assemble ctx (App (App (Id "||" _) e1) e2) = do
+  (_, asm2) <- assemble ctx e2
+  (_, asm1) <- assemble ctx e1
+  pure (StackBool, asm2 ++ asm1 ++ [AInstr Or])
 assemble ctx (App (App (Id "==" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
@@ -148,7 +158,10 @@ assemble ctx (App (App (Id "<" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
   pure (StackBool, asm2 ++ asm1 ++ [AInstr LessThan])
--- TODO other comparisons and partial comparisn closures
+assemble ctx (App (App (Id ">" _) e1) e2) = do
+  (_, asm2) <- assemble ctx e2
+  (_, asm1) <- assemble ctx e1
+  pure (StackBool, asm2 ++ asm1 ++ [AInstr GreaterThan])
 assemble ctx (App (App (Id "+" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
@@ -161,6 +174,25 @@ assemble ctx (App (App (Id "*" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
   pure (StackInt, asm2 ++ asm1 ++ [AInstr Mul])
+assemble ctx (App (App (Id "/" _) e1) e2) = do
+  (_, asm2) <- assemble ctx e2
+  (_, asm1) <- assemble ctx e1
+  pure (StackInt, asm2 ++ asm1 ++ [AInstr Div])
+assemble ctx (App (Id "&&" _) e) = do
+  (_, asm) <- assemble ctx e
+  pure (StackFunctionRef, asm ++ [AInstr $ Push tagPrimitiveFnAnd])
+assemble ctx (App (Id "||" _) e) = do
+  (_, asm) <- assemble ctx e
+  pure (StackFunctionRef, asm ++ [AInstr $ Push tagPrimitiveFnOr])
+assemble ctx (App (Id "==" _) e) = do
+  (_, asm) <- assemble ctx e
+  pure (StackFunctionRef, asm ++ [AInstr $ Push tagPrimitiveFnEquals])
+assemble ctx (App (Id "<" _) e) = do
+  (_, asm) <- assemble ctx e
+  pure (StackFunctionRef, asm ++ [AInstr $ Push tagPrimitiveFnLessThan])
+assemble ctx (App (Id ">" _) e) = do
+  (_, asm) <- assemble ctx e
+  pure (StackFunctionRef, asm ++ [AInstr $ Push tagPrimitiveFnGreaterThan])
 assemble ctx (App (Id "+" _) e) = do
   (_, asm) <- assemble ctx e
   pure (StackFunctionRef, asm ++ [AInstr $ Push tagPrimitiveFnAdd])
@@ -170,6 +202,9 @@ assemble ctx (App (Id "-" _) e) = do
 assemble ctx (App (Id "*" _) e) = do
   (_, asm) <- assemble ctx e
   pure (StackFunctionRef, asm ++ [AInstr $ Push tagPrimitiveFnMul])
+assemble ctx (App (Id "/" _) e) = do
+  (_, asm) <- assemble ctx e
+  pure (StackFunctionRef, asm ++ [AInstr $ Push tagPrimitiveFnDiv])
 assemble ctx (App e1 e2) = do
   (_, asm2) <- assemble ctx e2
   (_, asm1) <- assemble ctx e1
@@ -190,10 +225,10 @@ assemble ctx (Abs (x, t) e) = do
   label <- newDynamicLabelFor x
   let xSize = stackEffectOfType t
   let newCtx = Map.insert x (label, xSize) ctx
-  (_, asm) <- assemble newCtx e -- TODO We do not need to save this stack effect as we know what effect the function will have because of typing
+  (_, asm) <- assemble newCtx e
   let static =
         [AInstr $ Push (sizeOf xSize), AStore label] ++ asm ++ [AInstr Ret]
-  ref <- newStaticLabelFor "abs"
+  ref <- newStaticLabelFor $ "abs:" ++ x
   saveStatic (ref, static)
   pure (StackFunctionRef, [APushStaticRef ref, AInstr $ Push tagStaticFn])
 assemble ctx (If cond true false) = do
@@ -211,27 +246,31 @@ assemble ctx (If cond true false) = do
 
 readLabel :: Label -> Int
 readLabel (Label l dyn) =
-  case Text.readMaybe $ drop 1 $ dropWhile (/= '.') l of
-    Nothing -> error $ "Could not read label " ++ l
-    Just i  -> i
+  let labelType =
+        if dyn
+          then "dynamic"
+          else "static"
+   in case Text.readMaybe $ drop 1 $ dropWhile (/= '.') l of
+        Nothing -> error $ "Could not read " ++ labelType ++ " label " ++ l
+        Just i  -> i
 
 type LabelAdrMapping = Map.Map Label Adr
 
-getLabel :: LabelAdrMapping -> Label -> Int
-getLabel map l =
+getAdr :: LabelAdrMapping -> Label -> Int
+getAdr map l =
   case Map.lookup l map of
     Nothing  -> error $ "Could not find " ++ show l ++ " in adress mapping"
     Just adr -> adr
 
 toInstruction :: LabelAdrMapping -> Asm -> [Instruction]
-toInstruction _ (AInstr i)                 = [i]
-toInstruction _ (AStore l@(Label _ True))  = [StoreDynamic (readLabel l)]
-toInstruction _ (ALoad l@(Label _ True))   = [LoadDynamic (readLabel l)]
-toInstruction _ (AStore l@(Label _ False)) = [Store (readLabel l)]
-toInstruction _ (ALoad l@(Label _ False))  = [Load (readLabel l)]
-toInstruction labels (APushStaticRef l)    = [Push (getLabel labels l)]
-toInstruction _ (AJmpLabel l)              = [Noop] -- TODO we can prevent this by counting real instructions
-toInstruction labels (AJmpIf l)            = [JmpIf (getLabel labels l)]
+toInstruction _ (AInstr i)                  = [i]
+toInstruction _ (AStore l@(Label _ True))   = [StoreDynamic (readLabel l)]
+toInstruction _ (ALoad l@(Label _ True))    = [LoadDynamic (readLabel l)]
+toInstruction _ (AStore l@(Label _ False))  = [Store (readLabel l)]
+toInstruction _ (ALoad l@(Label _ False))   = [Load (readLabel l)]
+toInstruction adrMapping (APushStaticRef l) = [Push (getAdr adrMapping l)]
+toInstruction _ (AJmpLabel l)               = [Noop] -- TODO we can prevent this by counting real instructions
+toInstruction adrMapping (AJmpIf l)         = [JmpIf (getAdr adrMapping l)]
 
 makeProgram shouldOpt expr =
   let ((_, asm), (_, staticCode0)) =

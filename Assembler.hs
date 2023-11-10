@@ -1,12 +1,14 @@
 module Assembler
-  ( Expr(..)
-  , EType(..)
+  ( AExpr(..)
+  , AType(..)
   , makeProgram
   ) where
 
+import           Checker                   (CExpr, CType (..))
 import           Control.Monad.Trans.State
 import qualified Data.Bifunctor            as Bifunctor
 import qualified Data.Map                  as Map
+import           Expr
 import           Machine                   (Adr, IP, Instruction (..),
                                             MachineResult, MachineState (..),
                                             run, showMachineResult,
@@ -20,31 +22,22 @@ import           Machine                   (Adr, IP, Instruction (..),
                                             tagPrimitiveFnSub, tagStaticFn)
 import qualified Text.Read                 as Text
 
-type Name = String
-
-data EType
-  = EInt
-  | EBool
-  | EFn EType EType
+data AType
+  = AInt
+  | ABool
+  | AFn AType AType
   deriving (Show)
 
-data Expr
-  = Let Name Expr Expr
-  | App Expr Expr
-  | Abs (Name, EType) Expr
-  | Id Name EType
-  | Const Int
-  | If Expr Expr Expr
-  deriving (Show)
+type AExpr = Expr AType
 
-typeOf :: Expr -> EType
+typeOf :: AExpr -> AType
 typeOf (Let _ _ e) = typeOf e
 typeOf (App e _) = returnTypeOf $ typeOf e
   where
-    returnTypeOf (EFn _ t) = t
-typeOf (Abs (x, t) e) = EFn t (typeOf e)
+    returnTypeOf (AFn _ t) = t
+typeOf (Abs (x, t) e) = AFn t (typeOf e)
 typeOf (Id _ t) = t
-typeOf (Const _) = EInt
+typeOf (Const _) = AInt
 
 data Label =
   Label String Int Bool
@@ -94,12 +87,12 @@ saveStatic x = do
   (c, s) <- get
   put (c, x : s)
 
-stackEffectOfType :: EType -> StackEffect
-stackEffectOfType EBool     = StackPrimitive
-stackEffectOfType EInt      = StackPrimitive
-stackEffectOfType (EFn _ _) = StackFunctionRef
+stackEffectOfType :: AType -> StackEffect
+stackEffectOfType ABool     = StackPrimitive
+stackEffectOfType AInt      = StackPrimitive
+stackEffectOfType (AFn _ _) = StackFunctionRef
 
-stackEffectOfFnType (EFn _ r) = stackEffectOfType r
+stackEffectOfFnType (AFn _ r) = stackEffectOfType r
 stackEffectOfFnType t =
   error $ "Tried to get function stack effect non function " ++ show t
 
@@ -137,7 +130,7 @@ optimizeLoadSwap (p1@(AInstr (Push _)):(AInstr (Push 1)):(AStore l1):p2@(AInstr 
 optimizeLoadSwap (x:xs) = x : optimizeLoadSwap xs
 optimizeLoadSwap [] = []
 
-assemble :: Ctx -> Expr -> State AssembleState (StackEffect, [Asm])
+assemble :: Ctx -> AExpr -> State AssembleState (StackEffect, [Asm])
 assemble ctx (Const i) = pure (StackPrimitive, [AInstr $ Push i])
 assemble ctx (App (App (Id "&&" _) e1) e2) = do
   (_, asm2) <- assemble ctx e2

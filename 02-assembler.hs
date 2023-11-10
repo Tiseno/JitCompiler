@@ -1,11 +1,12 @@
 import           Assembler
 import           Data.Bifunctor
+import           Expr
 import           Machine
 import           Test
 
-binary = EFn EInt (EFn EInt EInt)
+binary = AFn AInt (AFn AInt AInt)
 
-unary = EFn EInt EInt
+unary = AFn AInt AInt
 
 nestedArithmetic = App (App (Id "*" binary) fiveMinusTwo) nineMinusFour
   where
@@ -18,10 +19,10 @@ plusClosure =
 absProgram =
   Let
     "double"
-    (Abs ("x", EInt) (App (App (Id "+" binary) (Id "x" EInt)) (Id "x" EInt)))
+    (Abs ("x", AInt) (App (App (Id "+" binary) (Id "x" AInt)) (Id "x" AInt)))
     (App (Id "double" unary) (Const 44))
 
-fibType = EFn EInt (EFn EInt (EFn EInt (EFn EInt EInt)))
+fibType = AFn AInt (AFn AInt (AFn AInt (AFn AInt AInt)))
 
 -- fib n = fib' n 0 1 0
 --   where
@@ -33,25 +34,25 @@ tailFibProgram =
   Let
     "fibR"
     (Abs
-       ("n", EInt)
+       ("n", AInt)
        (Abs
-          ("i", EInt)
+          ("i", AInt)
           (Abs
-             ("fn", EInt)
+             ("fn", AInt)
              (Abs
-                ("fm", EInt)
+                ("fm", AInt)
                 (If
-                   (App (App (Id "==" binary) (Id "n" EInt)) (Id "i" EInt))
-                   (Id "fn" EInt)
+                   (App (App (Id "==" binary) (Id "n" AInt)) (Id "i" AInt))
+                   (Id "fn" AInt)
                    (App
                       (App
                          (App
-                            (App (Id "fibR" fibType) (Id "n" EInt))
-                            (App (App (Id "+" binary) (Id "i" EInt)) (Const 1)))
+                            (App (Id "fibR" fibType) (Id "n" AInt))
+                            (App (App (Id "+" binary) (Id "i" AInt)) (Const 1)))
                          (App
-                            (App (Id "+" binary) (Id "fn" EInt))
-                            (Id "fm" EInt)))
-                      (Id "fn" EInt)))))))
+                            (App (Id "+" binary) (Id "fn" AInt))
+                            (Id "fm" AInt)))
+                      (Id "fn" AInt)))))))
     (App
        (App (App (App (Id "fibR" fibType) (Const 10)) (Const 0)) (Const 1))
        (Const 0))
@@ -64,22 +65,22 @@ naiveFibProgram =
   Let
     "fibr"
     (Abs
-       ("n", EInt)
+       ("n", AInt)
        (If
-          (App (App (Id "<" binary) (Id "n" EInt)) (Const 2))
+          (App (App (Id "<" binary) (Id "n" AInt)) (Const 2))
           (Const 1)
           (App
              (App
                 (Id "+" binary)
                 (App
                    (Id "fibr" unary)
-                   (App (App (Id "-" binary) (Id "n" EInt)) (Const 1))))
+                   (App (App (Id "-" binary) (Id "n" AInt)) (Const 1))))
              (App
                 (Id "fibr" unary)
-                (App (App (Id "-" binary) (Id "n" EInt)) (Const 2))))))
+                (App (App (Id "-" binary) (Id "n" AInt)) (Const 2))))))
     (App (Id "fibr" unary) (Const 10))
 
-testProgram :: String -> Expr -> ([Int], Maybe String) -> IO ()
+testProgram :: String -> AExpr -> ([Int], Maybe String) -> IO ()
 testProgram =
   test (either (first stack) (bimap stack (const Nothing)) . run . makeProgram)
 

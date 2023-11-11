@@ -5,9 +5,11 @@ import           Expr
 import           Machine
 import           Test
 
+boolOp = CFn CBool (CFn CBool CBool)
+
 unary = CFn CInt CInt
 
-binary = CFn CInt (CFn CInt CInt)
+intOp = CFn CInt (CFn CInt CInt)
 
 comparison = CFn CInt (CFn CInt CBool)
 
@@ -16,6 +18,12 @@ expressions =
     "expressions"
     [ test check "const int" (Const 1) (Right (Const 1, CInt))
     , test check "const bool" (ConstBool False) (Right (ConstBool False, CBool))
+    , test check "builtin and" (Id "&&" ()) (Right (Id "&&" boolOp, boolOp))
+    , test
+        check
+        "builtin or"
+        (App (Id "||" ()) (ConstBool True))
+        (Right (App (Id "||" boolOp) (ConstBool True), CFn CBool CBool))
     , test
         check
         "unbound identifier"
@@ -38,20 +46,20 @@ expressions =
                "fn"
                (Abs
                   ("a", CInt)
-                  (App (App (Id "+" binary) (Id "a" CInt)) (Const 5)))
+                  (App (App (Id "+" intOp) (Id "a" CInt)) (Const 5)))
                (Id "fn" unary)
            , unary))
-    , test check "builtin" (Id "+" ()) (Right (Id "+" binary, binary))
+    , test check "builtin" (Id "+" ()) (Right (Id "+" intOp, intOp))
     , test
         check
         "partial"
         (App (Id "+" ()) (Const 1))
-        (Right (App (Id "+" binary) (Const 1), unary))
+        (Right (App (Id "+" intOp) (Const 1), unary))
     , test
         check
         "applied"
         (App (App (Id "+" ()) (Const 1)) (Const 2))
-        (Right (App (App (Id "+" binary) (Const 1)) (Const 2), CInt))
+        (Right (App (App (Id "+" intOp) (Const 1)) (Const 2), CInt))
     , test
         check
         "mismatch 1"
@@ -109,13 +117,13 @@ recursive =
                      (Const 1)
                      (App
                         (App
-                           (Id "+" binary)
+                           (Id "+" intOp)
                            (App
                               (Id "fibr" (CFn CInt CInt))
-                              (App (App (Id "-" binary) (Id "n" CInt)) (Const 1))))
+                              (App (App (Id "-" intOp) (Id "n" CInt)) (Const 1))))
                         (App
                            (Id "fibr" (CFn CInt CInt))
-                           (App (App (Id "-" binary) (Id "n" CInt)) (Const 2))))))
+                           (App (App (Id "-" intOp) (Id "n" CInt)) (Const 2))))))
                (App (Id "fibr" (CFn CInt CInt)) (Const 10))
            , CInt))
     ]
@@ -133,9 +141,7 @@ higherOrder =
         (Right
            ( Let
                "fn"
-               (Abs
-                  ("f", binary)
-                  (App (App (Id "f" binary) (Const 1)) (Const 5)))
+               (Abs ("f", intOp) (App (App (Id "f" intOp) (Const 1)) (Const 5)))
                (Id "fn" CInt)
            , unary))
     , test
@@ -148,9 +154,7 @@ higherOrder =
         (Right
            ( Let
                "fn"
-               (Abs
-                  ("f", binary)
-                  (App (App (Id "f" binary) (Const 1)) (Const 5)))
+               (Abs ("f", intOp) (App (App (Id "f" intOp) (Const 1)) (Const 5)))
                (Id "fn" CInt)
            , unary))
     ]

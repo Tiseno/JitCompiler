@@ -9,6 +9,8 @@ import qualified Data.Map    as Map
 import qualified Debug.Trace as Debug
 import           Expr        (Expr (..), Pretty (pretty))
 
+dbg x = Debug.trace ("\n" ++ show x ++ "\n") x
+
 type CExpr = Expr CType
 
 data CType
@@ -32,9 +34,6 @@ instance Pretty () where
   pretty _ () = ""
 
 type CheckCtx = (Int, Map.Map String CType, Map.Map CType CType)
-
-emptyCheckCtx :: CheckCtx
-emptyCheckCtx = (0, Map.empty, Map.empty)
 
 newtype CheckState a =
   CheckState
@@ -73,8 +72,6 @@ setTypeRef :: CType -> CType -> CheckState ()
 setTypeRef a b =
   CheckState $ \(i, names, vars) -> pure ((i, names, Map.insert a b vars), ())
 
-type ExprCtx = Map.Map String CType
-
 checkEqual :: CType -> CType -> String -> CheckState ()
 checkEqual a b _
   | a == b = pure ()
@@ -95,13 +92,13 @@ findRoot t =
       Nothing -> pure ((i, names, vars), t)
       Just t2 -> runCheck (findRoot t2) ctx0
 
+type ExprCtx = Map.Map String CType
+
 getBound :: ExprCtx -> String -> CheckState CType
 getBound ctx x = do
   case Map.lookup x ctx of
     Nothing -> checkFail $ "Unbound identifier '" ++ x ++ "'"
     Just t  -> pure t
-
-dbg x = Debug.trace ("\n" ++ show x ++ "\n") x
 
 checkSt :: ExprCtx -> Expr () -> CheckState (CExpr, CType)
 checkSt ctx (Id x ()) = do
@@ -140,11 +137,6 @@ checkSt ctx (If cond e0 e1) = do
     show t0 ++ " and " ++ show t1 ++ " respectively"
   pure (If condc e0c e1c, t0)
 
-hasVar :: CType -> Bool
-hasVar (CFn a b) = hasVar a || hasVar b
-hasVar (CVar _)  = True
-hasVar _         = False
-
 replaceVars :: Map.Map CType CType -> CType -> CType
 replaceVars vars t@(CVar _) =
   case Map.lookup t vars of
@@ -154,16 +146,9 @@ replaceVars vars (CFn t0 t1) = CFn (replaceVars vars t0) (replaceVars vars t1)
 replaceVars _ t = t
 
 annotate :: Map.Map CType CType -> CExpr -> CExpr
-annotate vars (Id x t) = Id x (replaceVars vars t)
-annotate vars (App e0 e1) = App (annotate vars e0) (annotate vars e1)
-annotate vars (Abs (x, t) e) = Abs (x, replaceVars vars t) (annotate vars e)
-annotate vars (Let x e0 e1) = Let x (annotate vars e0) (annotate vars e1)
-annotate _ c@(Const _) = c
-annotate _ c@(ConstBool _) = c
-annotate vars (If cond e0 e1) =
-  If (annotate vars cond) (annotate vars e0) (annotate vars e1)
+annotate vars = fmap (replaceVars vars)
 
-boolOp = CFn CInt (CFn CInt CInt)
+boolOp = CFn CBool (CFn CBool CBool)
 
 comparison = CFn CInt (CFn CInt CBool)
 
@@ -173,13 +158,18 @@ builtin :: ExprCtx
 builtin =
   Map.fromList
     [ ("&&", boolOp)
-    , ("==", comparison)
+    , ("||", boolOp)
     , ("<", comparison)
+    , (">", comparison)
+    , ("==", comparison)
     , ("+", intOp)
     , ("-", intOp)
+    , ("*", intOp)
+    , ("/", intOp)
     ]
 
 check :: Expr () -> Either String (CExpr, CType)
 check e = do
-  ((_, _, vars), (expr, t)) <- runCheck (checkSt builtin e) emptyCheckCtx
+  ((_, _, vars), (expr, t)) <-
+    runCheck (checkSt builtin e) (0, Map.empty, Map.empty)
   pure (annotate vars expr, t)

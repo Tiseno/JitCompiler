@@ -2,6 +2,7 @@ module Assembler
   ( AExpr(..)
   , AType(..)
   , makeProgram
+  , makeProgramFromChecked
   ) where
 
 import           Checker                   (CExpr, CType (..))
@@ -248,6 +249,19 @@ toInstruction adrMapping (APushStaticRef l) = [Push (getAdr adrMapping l)]
 toInstruction _ (AJmpLabel l)               = [Noop] -- TODO we can prevent this by counting real instructions
 toInstruction adrMapping (AJmpIf l)         = [JmpIf (getAdr adrMapping l)]
 
+cExprToA :: CExpr -> AExpr
+cExprToA = fmap cTypeToA
+
+cTypeToA :: CType -> AType
+cTypeToA (CVar x)    = error "CVar has no mapping to AType"
+cTypeToA CInt        = AInt
+cTypeToA CBool       = ABool
+cTypeToA (CFn t0 t1) = AFn (cTypeToA t0) (cTypeToA t1)
+
+makeProgramFromChecked :: CExpr -> [Instruction]
+makeProgramFromChecked e = makeProgram $ cExprToA e
+
+makeProgram :: AExpr -> [Instruction]
 makeProgram expr =
   let ((_, asm), (_, staticCode0)) =
         runState (assemble Map.empty expr) (1000000, [])

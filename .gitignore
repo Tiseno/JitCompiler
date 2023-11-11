@@ -1,3 +1,4 @@
 main
 *.hi
 *.o
+jitc

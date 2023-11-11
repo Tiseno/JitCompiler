@@ -36,7 +36,7 @@ data Instruction
   | Swap
   | Dup
   | Dup2
-  | Dig2
+  | Dig
   | Dig3
   | Not
   | And
@@ -83,7 +83,7 @@ tagPrimitiveFnSub = 11119
 
 tagPrimitiveFnMul = 11120
 
-tagPrimitiveFnDiv = 11120
+tagPrimitiveFnDiv = 11121
 
 type HeapValue = [Int]
 
@@ -190,12 +190,12 @@ dup2 =
       (x:y:xs) -> Right (st0 {stack = x : y : x : y : xs}, ())
       _        -> Left (st0, Just "Dup on stack with fewer than 2 elements")
 
-dig2 :: Machine ()
-dig2 =
+dig :: Machine ()
+dig =
   Machine $ \st0@(MachineState {stack}) ->
     case stack of
       (x:y:n:xs) -> Right (st0 {stack = n : x : y : xs}, ())
-      _          -> Left (st0, Just "Dig 2 on stack with fewer than 3 elements")
+      _          -> Left (st0, Just "Dig on stack with fewer than 3 elements")
 
 dig3 :: Machine ()
 dig3 =
@@ -392,7 +392,7 @@ oneInstruction = do
     Swap           -> swap
     Dup            -> dup
     Dup2           -> dup2
-    Dig2           -> dig2
+    Dig            -> dig
     Dig3           -> dig3
     Not            -> boolNot
     And            -> boolOp (&&)

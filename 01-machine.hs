@@ -1,6 +1,61 @@
-import           Data.Bifunctor
 import           Machine
 import           Test
+
+testProgram :: String -> [Instruction] -> [Int] -> IO ()
+testProgram = test (stack . either fst fst . run)
+
+stackManipulation =
+  describe
+    "stack manipulation"
+    [ testProgram "push" [Push 1, Push 3, Exit] [3, 1]
+    , testProgram "pop" [Push 0, Pop, Exit] []
+    , testProgram "swap" [Push 1, Push 3, Swap, Exit] [1, 3]
+    , testProgram "dup" [Push 3, Dup, Exit] [3, 3]
+    , testProgram "dup2" [Push 1, Push 3, Dup2, Exit] [3, 1, 3, 1]
+    , testProgram "dig" [Push 0, Push 1, Push 2, Push 3, Dig, Exit] [1, 3, 2, 0]
+    , testProgram
+        "dig3"
+        [Push 0, Push 1, Push 2, Push 3, Push 4, Dig3, Exit]
+        [1, 4, 3, 2, 0]
+    ]
+
+boolean =
+  describe
+    "boolean"
+    [ testProgram "not false" [Push 0, Not, Exit] [1]
+    , testProgram "not true" [Push 1, Not, Exit] [0]
+    , testProgram "false and false" [Push 0, Push 0, And, Exit] [0]
+    , testProgram "false and true" [Push 0, Push 1, And, Exit] [0]
+    , testProgram "true and false" [Push 1, Push 0, And, Exit] [0]
+    , testProgram "true and true" [Push 1, Push 1, And, Exit] [1]
+    , testProgram "false or false" [Push 0, Push 0, Or, Exit] [0]
+    , testProgram "false or true" [Push 0, Push 1, Or, Exit] [1]
+    , testProgram "true or false" [Push 1, Push 0, Or, Exit] [1]
+    , testProgram "true or true" [Push 1, Push 1, Or, Exit] [1]
+    ]
+
+comparison =
+  describe
+    "comparison"
+    [ testProgram "2 less than 5" [Push 5, Push 2, LessThan, Exit] [1]
+    , testProgram "5 less than 2" [Push 2, Push 5, LessThan, Exit] [0]
+    , testProgram "5 less than 5" [Push 5, Push 5, LessThan, Exit] [0]
+    , testProgram "2 greater than 5" [Push 5, Push 2, GreaterThan, Exit] [0]
+    , testProgram "5 greater than 2" [Push 2, Push 5, GreaterThan, Exit] [1]
+    , testProgram "5 greater than 5" [Push 5, Push 5, GreaterThan, Exit] [0]
+    , testProgram "2 equals 5" [Push 5, Push 2, Equals, Exit] [0]
+    , testProgram "5 equals 2" [Push 2, Push 5, Equals, Exit] [0]
+    , testProgram "5 equals 5" [Push 5, Push 5, Equals, Exit] [1]
+    ]
+
+arithmetic =
+  describe
+    "arithmetic"
+    [ testProgram "add" [Push 2, Push 3, Add, Exit] [5]
+    , testProgram "sub" [Push 2, Push 3, Sub, Exit] [1]
+    , testProgram "mul" [Push 2, Push 3, Mul, Exit] [6]
+    , testProgram "div" [Push 2, Push 3, Div, Exit] [1]
+    ]
 
 -- fib n = fib' n 0 1 0
 --   where
@@ -20,7 +75,7 @@ fibFunction' offset =
   , Dig3 -- #loop 9
   , Dig3
   , Dup
-  , Dig2
+  , Dig
   , Add
   , Dig3
   , Push 1
@@ -267,12 +322,9 @@ closureMax3Program2 =
       max3A = max3 $ length (main 0)
    in mainA ++ max3A
 
-testProgram :: String -> [Instruction] -> [Int] -> IO ()
-testProgram = test (stack . either fst fst . run)
-
-main =
+programs =
   describe
-    "machine"
+    "programs"
     [ testProgram "fib loop" fibLoopProgram [89]
     , testProgram "fib rec" fibRProgram [89]
     , testProgram "max3 1" max3Program [5040]
@@ -280,3 +332,10 @@ main =
     , testProgram "max3 3" closureMax3Program [5040]
     , testProgram "max3 4" closureMax3Program2 [5040]
     ]
+
+main = do
+  stackManipulation
+  boolean
+  comparison
+  arithmetic
+  programs

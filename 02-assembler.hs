@@ -4,6 +4,10 @@ import           Expr
 import           Machine
 import           Test
 
+testProgram :: String -> AExpr -> ([Int], Maybe String) -> IO ()
+testProgram =
+  test (either (first stack) (bimap stack (const Nothing)) . run . makeProgram)
+
 binary = AFn AInt (AFn AInt AInt)
 
 unary = AFn AInt AInt
@@ -79,10 +83,6 @@ naiveFibProgram =
                 (Id "fibr" unary)
                 (App (App (Id "-" binary) (Id "n" AInt)) (Const 2))))))
     (App (Id "fibr" unary) (Const 10))
-
-testProgram :: String -> AExpr -> ([Int], Maybe String) -> IO ()
-testProgram =
-  test (either (first stack) (bimap stack (const Nothing)) . run . makeProgram)
 
 main =
   describe

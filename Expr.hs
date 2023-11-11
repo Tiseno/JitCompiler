@@ -18,7 +18,7 @@ data Expr a
   | Const Int
   | ConstBool Bool
   | If (Expr a) (Expr a) (Expr a)
-  deriving (Show)
+  deriving (Eq, Show)
 
 instance Functor Expr where
   fmap f (Id x a)       = Id x (f a)

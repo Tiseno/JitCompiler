@@ -6,7 +6,7 @@ testProgram = test (stack . either fst fst . run)
 
 stackManipulation =
   describe
-    "stack manipulation"
+    "machine stack manipulation"
     [ testProgram "push" [Push 1, Push 3, Exit] [3, 1]
     , testProgram "pop" [Push 0, Pop, Exit] []
     , testProgram "swap" [Push 1, Push 3, Swap, Exit] [1, 3]
@@ -21,7 +21,7 @@ stackManipulation =
 
 boolean =
   describe
-    "boolean"
+    "machine boolean operations"
     [ testProgram "not false" [Push 0, Not, Exit] [1]
     , testProgram "not true" [Push 1, Not, Exit] [0]
     , testProgram "false and false" [Push 0, Push 0, And, Exit] [0]
@@ -36,7 +36,7 @@ boolean =
 
 comparison =
   describe
-    "comparison"
+    "machine comparisons"
     [ testProgram "2 less than 5" [Push 5, Push 2, LessThan, Exit] [1]
     , testProgram "5 less than 2" [Push 2, Push 5, LessThan, Exit] [0]
     , testProgram "5 less than 5" [Push 5, Push 5, LessThan, Exit] [0]
@@ -50,7 +50,7 @@ comparison =
 
 arithmetic =
   describe
-    "arithmetic"
+    "machine arithmetic operations"
     [ testProgram "add" [Push 2, Push 3, Add, Exit] [5]
     , testProgram "sub" [Push 2, Push 3, Sub, Exit] [1]
     , testProgram "mul" [Push 2, Push 3, Mul, Exit] [6]
@@ -324,7 +324,7 @@ closureMax3Program2 =
 
 programs =
   describe
-    "programs"
+    "machine programs"
     [ testProgram "fib loop" fibLoopProgram [89]
     , testProgram "fib rec" fibRProgram [89]
     , testProgram "max3 1" max3Program [5040]

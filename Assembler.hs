@@ -6,12 +6,9 @@ module Assembler
 
 import           Checker                   (CExpr, CType (..))
 import           Control.Monad.Trans.State
-import qualified Data.Bifunctor            as Bifunctor
 import qualified Data.Map                  as Map
 import           Expr
 import           Machine                   (Adr, IP, Instruction (..),
-                                            MachineResult, MachineState (..),
-                                            run, showMachineResult,
                                             tagPrimitiveFnAdd,
                                             tagPrimitiveFnAnd,
                                             tagPrimitiveFnDiv,
@@ -20,7 +17,6 @@ import           Machine                   (Adr, IP, Instruction (..),
                                             tagPrimitiveFnLessThan,
                                             tagPrimitiveFnMul, tagPrimitiveFnOr,
                                             tagPrimitiveFnSub, tagStaticFn)
-import qualified Text.Read                 as Text
 
 data AType
   = AInt

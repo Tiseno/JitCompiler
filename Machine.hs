@@ -115,11 +115,13 @@ showMachineState (MachineState instrs ip counter heap callStack stack) =
 
 showMachineResult :: MachineResult () -> String
 showMachineResult mr =
-  (case mr of
-     Left (ms, Just msg) -> showMachineState ms ++ "\n\nERROR: " ++ msg
-     Left (ms, Nothing)  -> showMachineState ms
-     Right (ms, ())      -> showMachineState ms) ++
-  "\n"
+  case mr of
+    Left (ms, Just msg) -> showMachineState ms ++ "\n\nRUNTIME ERROR: " ++ msg
+    Left (ms, Nothing)  -> showStack ms
+    Right (ms, ())      -> showStack ms
+  where
+    showStack :: MachineState -> String
+    showStack ms = show $ head $ stack ms
 
 type MachineResult a = Either (MachineState, Maybe String) (MachineState, a)
 

@@ -5,13 +5,21 @@ import           Expr
 import           Machine
 import           Test
 
-boolOp = CFn CBool (CFn CBool CBool)
+int = CInt
 
-unary = CFn CInt CInt
+bool = CBool
 
-intOp = CFn CInt (CFn CInt CInt)
+infixr 1 ~>
 
-comparison = CFn CInt (CFn CInt CBool)
+(~>) = CFn
+
+intOp = int ~> int ~> int
+
+boolOp = bool ~> bool ~> bool
+
+unary = int ~> int
+
+comparison = int ~> int ~> bool
 
 expressions =
   describe
@@ -64,12 +72,12 @@ expressions =
         check
         "mismatch 1"
         (App (Id "+" ()) (ConstBool True))
-        (Left "Can not unify Int with Bool")
+        (Left "Could not unify Int with Bool in application")
     , test
         check
         "mismatch 2"
         (App (Id "+" ()) (Id "+" ()))
-        (Left "Can not unify Int with Int->Int->Int")
+        (Left "Could not unify Int with Int->Int->Int in application")
     , test
         check
         "if condition"
@@ -79,8 +87,7 @@ expressions =
         check
         "if consistent"
         (If (ConstBool True) (ConstBool True) (Const 1))
-        (Left
-           "Expected both branches of if to be of same type, but they were Bool and Int respectively")
+        (Left "Could not unify Bool with Int in if expression")
     ]
 
 naiveFibProgram =
@@ -133,20 +140,41 @@ higherOrder =
     "higher order functions"
     [ test
         check
-        "higher order function"
+        "higher order function 1"
+        -- let perform = \f -> (f 2)
+        -- in (perform (+ 4))
         (Let
-           "fn"
-           (Abs ("f", ()) (App (App (Id "f" ()) (Const 1)) (Const 5)))
-           (Id "fn" ()))
+           "perform"
+           (Abs ("f", ()) (App (Id "f" ()) (Const 2)))
+           (App (Id "perform" ()) (App (Id "+" ()) (Const 4))))
         (Right
            ( Let
-               "fn"
-               (Abs ("f", intOp) (App (App (Id "f" intOp) (Const 1)) (Const 5)))
-               (Id "fn" CInt)
-           , unary))
+               "perform"
+               (Abs ("f", int ~> int) (App (Id "f" (int ~> int)) (Const 2)))
+               (App
+                  (Id "perform" ((int ~> int) ~> int))
+                  (App (Id "+" intOp) (Const 4)))
+           , CInt))
     , test
         check
-        "higher order function"
+        "higher order function 2"
+        -- let perform = \f -> (f 2)
+        -- in ((perform +) 4)
+        (Let
+           "perform"
+           (Abs ("f", ()) (App (Id "f" ()) (Const 2)))
+           (App (App (Id "perform" ()) (Id "+" ())) (Const 4)))
+        (Right
+           ( Let
+               "perform"
+               (Abs ("f", intOp) (App (Id "f" intOp) (Const 2)))
+               (App
+                  (App (Id "perform" (intOp ~> int ~> int)) (Id "+" intOp))
+                  (Const 4))
+           , CInt))
+    , test
+        check
+        "higher order function 3"
         (Let
            "fn"
            (Abs ("f", ()) (App (App (Id "f" ()) (Const 1)) (Const 5)))
@@ -155,8 +183,25 @@ higherOrder =
            ( Let
                "fn"
                (Abs ("f", intOp) (App (App (Id "f" intOp) (Const 1)) (Const 5)))
-               (Id "fn" CInt)
-           , unary))
+               (App (Id "fn" (intOp ~> int)) (Id "+" intOp))
+           , int))
+    , test
+        check
+        "uninstantiated higher order function"
+        (Let
+           "fn"
+           (Abs ("f", ()) (App (App (Id "f" ()) (Const 1)) (Const 5)))
+           (Id "fn" ()))
+        (Right
+           ( Let
+               "fn"
+               (Abs
+                  ("f", int ~> int ~> CVar "t3")
+                  (App
+                     (App (Id "f" (int ~> int ~> CVar "t3")) (Const 1))
+                     (Const 5)))
+               (Id "fn" ((int ~> int ~> CVar "t3") ~> CVar "t3"))
+           , (int ~> int ~> CVar "t3") ~> CVar "t3"))
     ]
 
 doubleProgram =
@@ -200,6 +245,5 @@ checkAndRunPrograms =
 main = do
   expressions
   recursive
-  -- TODO higher order functions are not instantiated correctly
-  -- higherOrder
+  higherOrder
   checkAndRunPrograms

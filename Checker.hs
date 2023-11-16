@@ -70,20 +70,27 @@ newVar =
 
 setTypeRef :: CType -> CType -> CheckState ()
 setTypeRef a b =
-  CheckState $ \(i, names, vars) -> pure ((i, names, Map.insert a b vars), ())
+  CheckState $ \(i, names, vars) ->
+    let newVars = Map.insert a b vars
+     in pure ((i, names, newVars), ())
 
 checkEqual :: CType -> CType -> String -> CheckState ()
 checkEqual a b _
   | a == b = pure ()
 checkEqual _ _ s = checkFail s
 
-unify :: CType -> CType -> CheckState ()
-unify a b
+unify :: CType -> CType -> String -> CheckState ()
+unify a b _
   | a == b = pure ()
-unify (CFn aa ab) b@(CFn ba bb) = unify aa ba >> unify ab bb
-unify a@(CVar _) b = setTypeRef a b
-unify a b@(CVar _) = unify b a
-unify a b = checkFail $ "Can not unify " ++ show a ++ " with " ++ show b
+unify (CFn aa ab) (CFn ba bb) m = unify aa ba m >> unify ab bb m
+unify a@(CVar _) b m = do
+  a' <- findRoot a
+  if a == a'
+    then setTypeRef a' b
+    else unify a' b m
+unify a b@(CVar _) m = unify b a m
+unify a b m =
+  checkFail $ "Could not unify " ++ show a ++ " with " ++ show b ++ " in " ++ m
 
 findRoot :: CType -> CheckState CType
 findRoot t =
@@ -109,7 +116,8 @@ checkSt ctx (App e0 e1) = do
   (e0c, t0) <- checkSt ctx e0
   (e1c, t1) <- checkSt ctx e1
   t' <- newVar
-  unify t0 (CFn t1 t')
+  let t1' = CFn t1 t'
+  unify t0 t1' "application"
   t'' <- findRoot t'
   pure (App e0c e1c, t'')
 checkSt ctx (Abs (x, ()) e) = do
@@ -129,13 +137,13 @@ checkSt ctx (Const i) = pure (Const i, CInt)
 checkSt ctx (ConstBool b) = pure (ConstBool b, CBool)
 checkSt ctx (If cond e0 e1) = do
   (condc, tc) <- checkSt ctx cond
-  checkEqual tc CBool $ "Expected Bool in if condition but found " ++ show tc
+  tc' <- findRoot tc
+  checkEqual tc' CBool $ "Expected Bool in if condition but found " ++ show tc'
   (e0c, t0) <- checkSt ctx e0
   (e1c, t1) <- checkSt ctx e1
-  checkEqual t0 t1 $
-    "Expected both branches of if to be of same type, but they were " ++
-    show t0 ++ " and " ++ show t1 ++ " respectively"
-  pure (If condc e0c e1c, t0)
+  unify t0 t1 "if expression"
+  t0' <- findRoot t0
+  pure (If condc e0c e1c, t0')
 
 replaceVars :: Map.Map CType CType -> CType -> CType
 replaceVars vars t@(CVar _) =
@@ -172,4 +180,4 @@ check :: Expr () -> Either String (CExpr, CType)
 check e = do
   ((_, _, vars), (expr, t)) <-
     runCheck (checkSt builtin e) (0, Map.empty, Map.empty)
-  pure (annotate vars expr, t)
+  pure (annotate vars expr, replaceVars vars t)
